@@ -1,12 +1,24 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import type { UseChatHelpers } from '@ai-sdk/react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Minus, Plus, FileText, Wand2 } from 'lucide-react';
 import { useWindowSize } from 'usehooks-ts';
 
 import { getActivePdf } from '@/lib/get-active-pdf';
 import type { Attachment, ChatMessage } from '@/lib/types';
+import { uploadChatFile } from '@/lib/upload-chat-file';
+import { PaperclipIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { PdfSelectionEditLayer } from '@/components/pdf-selection-edit-layer';
 import { cn } from '@/lib/utils';
@@ -56,9 +68,13 @@ export function PdfDocumentPanel({
   revisionOffer,
   onPdfEditToComposer,
   onFindEditsPrompt,
+  setAttachments,
+  chatStatus,
 }: {
   messages: ChatMessage[];
   attachments: Attachment[];
+  setAttachments?: Dispatch<SetStateAction<Attachment[]>>;
+  chatStatus?: UseChatHelpers<ChatMessage>['status'];
   className?: string;
   splitEdge?: 'left' | 'top';
   revisionOffer?: {
@@ -94,6 +110,8 @@ export function PdfDocumentPanel({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [scale, setScale] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const panelFileInputRef = useRef<HTMLInputElement>(null);
+  const [panelUploadQueue, setPanelUploadQueue] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageWidth, setPageWidth] = useState(560);
   const { width: windowWidth } = useWindowSize();
@@ -146,7 +164,31 @@ export function PdfDocumentPanel({
     setScale((s) => Math.min(2.5, Math.round((s + 0.15) * 100) / 100));
   }, []);
 
+  const handlePanelFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      if (!setAttachments) {
+        return;
+      }
+      const files = Array.from(event.target.files || []);
+      setPanelUploadQueue(files.map((f) => f.name));
+      try {
+        const uploaded = await Promise.all(files.map((f) => uploadChatFile(f)));
+        const ok = uploaded.filter(
+          (a): a is Attachment => a !== undefined,
+        );
+        setAttachments((current) => [...current, ...ok]);
+      } catch (e) {
+        console.error('Error uploading files from document panel', e);
+      } finally {
+        setPanelUploadQueue([]);
+        event.target.value = '';
+      }
+    },
+    [setAttachments],
+  );
+
   const isCompact = windowWidth ? windowWidth < 768 : false;
+  const canAttach = Boolean(setAttachments) && chatStatus === 'ready';
 
   return (
     <div
@@ -166,6 +208,33 @@ export function PdfDocumentPanel({
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {setAttachments && (
+            <>
+              <input
+                type="file"
+                className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
+                ref={panelFileInputRef}
+                multiple
+                accept="application/pdf,.pdf"
+                onChange={handlePanelFileChange}
+                tabIndex={-1}
+              />
+              <Button
+                type="button"
+                data-testid="attachments-button-panel"
+                className="rounded-md rounded-bl-lg p-[7px] h-fit shrink-0 self-center dark:border-zinc-700 hover:dark:bg-zinc-900 hover:bg-zinc-200"
+                variant="ghost"
+                disabled={!canAttach || panelUploadQueue.length > 0}
+                onClick={(e) => {
+                  e.preventDefault();
+                  panelFileInputRef.current?.click();
+                }}
+                aria-label="Attach PDF"
+              >
+                <PaperclipIcon size={14} />
+              </Button>
+            </>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -263,8 +332,9 @@ export function PdfDocumentPanel({
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground h-full min-h-[200px]">
             <FileText className="size-10 opacity-40" />
             <p className="text-sm max-w-[240px]">
-              Upload a PDF with the attachment button. It appears here as you
-              compose and after you send.
+              Upload a PDF with the attachment button in the toolbar above or
+              next to the message field. It appears here as you compose and after
+              you send.
             </p>
             {revisionOffer && (
               <Button

@@ -279,6 +279,8 @@ export function Chat({
             <PdfDocumentPanel
               messages={messages}
               attachments={attachments}
+              setAttachments={isReadonly ? undefined : setAttachments}
+              chatStatus={status}
               splitEdge={isStackedPdfLayout ? 'top' : 'left'}
               className="flex-1"
               revisionOffer={latestPdfRevision}
