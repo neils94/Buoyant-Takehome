@@ -43,6 +43,7 @@ function PureMultimodalInput({
   className,
   selectedVisibilityType,
   composerRef,
+  inputPlaceholder = 'Send a message… Enter to submit',
 }: {
   chatId: string;
   input: string;
@@ -57,6 +58,7 @@ function PureMultimodalInput({
   className?: string;
   selectedVisibilityType: VisibilityType;
   composerRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
+  inputPlaceholder?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { width } = useWindowSize();
@@ -264,7 +266,7 @@ function PureMultimodalInput({
             composerRef.current = el;
           }
         }}
-        placeholder="Send a message..."
+        placeholder={inputPlaceholder}
         value={input}
         onChange={handleInput}
         className={cx(
@@ -315,6 +317,7 @@ export const MultimodalInput = memo(
     if (!equal(prevProps.attachments, nextProps.attachments)) return false;
     if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType)
       return false;
+    if (prevProps.inputPlaceholder !== nextProps.inputPlaceholder) return false;
 
     return true;
   },

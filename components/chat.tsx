@@ -27,6 +27,8 @@ import { useDataStream } from './data-stream-provider';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useWindowSize } from 'usehooks-ts';
 
+const chatComposerPlaceholder = 'Send a message… Enter to submit';
+
 const PdfDocumentPanel = dynamic(
   () =>
     import('@/components/pdf-document-panel').then(
@@ -249,6 +251,7 @@ export function Chat({
                     sendMessage={sendMessage}
                     selectedVisibilityType={visibilityType}
                     composerRef={composerTextareaRef}
+                    inputPlaceholder={chatComposerPlaceholder}
                   />
                 )}
               </form>
