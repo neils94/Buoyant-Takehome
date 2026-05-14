@@ -26,6 +26,8 @@ Next.js app for uploading proposal PDFs, chatting with an AI about them, and dri
 
 - **Multi-turn chat** could be smoother; the model sometimes **delays** before the user can submit again.
 - **Retries** around the model/API path could reduce **silent drops** when the upstream connection fails without a clear error.
+- **Blob validation** — This path is **not silent** (failures surface), but uploads today target **public** Blob storage. In production I would use **private Blob** with **authenticated** access to reads and downloads.
+- **OAuth** — The app does not ship with OAuth. A fuller product would attach **each user to their own account and history** (and isolate their data accordingly). That was skipped here because the extra provisioning and wiring did not feel necessary for the take-home scope.
 
 ---
 
