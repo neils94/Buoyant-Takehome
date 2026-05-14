@@ -4,6 +4,48 @@ Next.js app for uploading proposal PDFs, chatting with an AI about them, and dri
 
 ---
 
+## What I cut and why
+
+- **Model support for images and other document formats** — Scoped back in favor of **accuracy on PDFs** rather than spreading context and tooling across many file types.
+- **Multiple models (talker + reasoner)** — The original idea was a heavier **reasoning + tool-calling** model paired with a lighter **conversational** model (similar to a Thinking Machines–style split). That was cut as unnecessary for this use case: users mainly need the system to **do the work**, not to chat at length or queue lots of background tasks.
+
+---
+
+## Design decisions
+
+### Agent design
+
+- Built the agent on the **Vercel AI SDK** with tools that can: **read available knowledge bases** and **read the selected one in depth**; **create and update documents** (including edits suitable for diffs, stashing changes, and related workflows); and **read and publish proposals**.
+- **Split tools into single-purpose functions** so debugging and refactors stay straightforward. Models also infer *when* and *how much* to call tools; **narrow names and limited surface area** reduce confusion and bad tool assumptions.
+
+### PDF representation
+
+- Added a **dedicated documents panel** in the UX so users can **view, highlight, and edit** specific parts of the PDF in context.
+
+### Silent failure modes
+
+- **Multi-turn chat** could be smoother; the model sometimes **delays** before the user can submit again.
+- **Retries** around the model/API path could reduce **silent drops** when the upstream connection fails without a clear error.
+
+---
+
+## What I added beyond the brief
+
+- **Prompt presets** for common tasks — Many people do not want to type long, detailed prompts to get full value from the model; presets lower that bar.
+- **Side-by-side document panel** — Makes proposed edits easier to **see and sanity-check** against the source PDF.
+- **“Edit with AI”** — Lets users **highlight**, attach **notes**, and submit **targeted** edit requests.
+
+---
+
+## What I’d add given eight more hours
+
+- **Stronger consultant behavior** — More **concrete tooling**, **prompting**, and **validation**. The agent already behaves like a general consultant; domain-specific **examples of edits per consultant type** would tighten output.
+- **Current grounding** — Tooling for **date/time** and possibly **web search** so the model can align with facts not already in weights or the knowledge base.
+- **Validation loop** — Something like an **LLM-as-judge** or **critic** pass before surfacing suggestions.
+- **Vector search** — A **vector DB + retrieval** path for larger or messier corpora.
+
+---
+
 ## What you need installed
 
 These are **system-level** tools (not npm packages). Install them before cloning the repo.

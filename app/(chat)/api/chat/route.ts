@@ -238,7 +238,7 @@ export async function POST(request: Request) {
           system: workspaceSystem,
           messages: baseModelMessages,
           abortSignal: request.signal,
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(15),
           experimental_activeTools: [
             'readUserProposalPdf',
             'publishProposalPdfRevision',
