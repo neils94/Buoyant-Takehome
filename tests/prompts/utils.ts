@@ -229,13 +229,13 @@ As we move forward, Silicon Valley continues to reinvent itself. While some pred
         usage: { inputTokens: 3, outputTokens: 10, totalTokens: 13 },
       },
     ];
-  } else if (compareMessages(recentMessage, TEST_PROMPTS.GET_WEATHER_CALL)) {
+  } else if (compareMessages(recentMessage, TEST_PROMPTS.LIST_KB_CALL)) {
     return [
       {
         type: 'tool-call',
         toolCallId: 'call_456',
-        toolName: 'getWeather',
-        input: JSON.stringify({ latitude: 37.7749, longitude: -122.4194 }),
+        toolName: 'listKnowledgeBase',
+        input: JSON.stringify({}),
       },
       {
         type: 'finish',
@@ -243,9 +243,11 @@ As we move forward, Silicon Valley continues to reinvent itself. While some pred
         usage: { inputTokens: 3, outputTokens: 10, totalTokens: 13 },
       },
     ];
-  } else if (compareMessages(recentMessage, TEST_PROMPTS.GET_WEATHER_RESULT)) {
+  } else if (compareMessages(recentMessage, TEST_PROMPTS.READ_KB_RESULT)) {
     return [
-      ...textToDeltas('The current temperature in San Francisco is 17°C.'),
+      ...textToDeltas(
+        'Here is a short excerpt from that reference SOQ you can use for tone and structure.',
+      ),
       {
         type: 'finish',
         finishReason: 'stop',

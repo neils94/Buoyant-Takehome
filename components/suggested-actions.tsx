@@ -20,24 +20,28 @@ function PureSuggestedActions({
 }: SuggestedActionsProps) {
   const suggestedActions = [
     {
-      title: 'What are the advantages',
-      label: 'of using Next.js?',
-      action: 'What are the advantages of using Next.js?',
+      title: 'Compare our proposal',
+      label: 'to the RFP or SOQ',
+      action:
+        'I uploaded our proposal PDF. Compare it to the RFP or SOQ requirements, flag gaps or weak spots, and suggest concrete edits our consultants should make before submission.',
     },
     {
-      title: 'Write code to',
-      label: `demonstrate djikstra's algorithm`,
-      action: `Write code to demonstrate djikstra's algorithm`,
+      title: 'Consultant-ready edits',
+      label: 'to tone and structure',
+      action:
+        'Review our proposal for tone and structure. Recommend edits so it reads like credible senior consultant work—clear scope, methodology, and outcomes without fluff.',
     },
     {
-      title: 'Help me write an essay',
-      label: `about silicon valley`,
-      action: `Help me write an essay about silicon valley`,
+      title: 'Sharpen win themes',
+      label: 'and differentiators',
+      action:
+        'Help sharpen our win themes and differentiators for this pursuit. Ask what you need about the buyer and competition, then suggest stronger positioning and where to weave it in.',
     },
     {
-      title: 'What is the weather',
-      label: 'in San Francisco?',
-      action: 'What is the weather in San Francisco?',
+      title: 'Red-team the response',
+      label: 'for evaluator and compliance risk',
+      action:
+        'Red-team our proposal for risks an evaluator might call out—assumptions, compliance gaps, vague commitments, and pricing or schedule exposure. Propose consultant-level mitigations for each issue.',
     },
   ];
 

@@ -38,7 +38,7 @@ export const reasoningModel = new MockLanguageModelV2({
   }),
 });
 
-export const titleModel = new MockLanguageModelV2({
+export const pdfExtractionModel = new MockLanguageModelV2({
   doGenerate: async () => ({
     rawCall: { rawPrompt: null, rawSettings: {} },
     finishReason: 'stop',

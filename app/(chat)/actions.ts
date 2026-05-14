@@ -21,12 +21,14 @@ export async function generateTitleFromUserMessage({
   message: UIMessage;
 }) {
   const { text: title } = await generateText({
-    model: myProvider.languageModel('title-model'),
-    system: `\n
-    - you will generate a short title based on the first message a user begins a conversation with
-    - ensure it is not more than 80 characters long
-    - the title should be a summary of the user's message
-    - do not use quotes or colons`,
+    model: myProvider.languageModel('pdf-extraction-model'),
+    system: `You are a senior editorial assistant for consultant proposals and qualifications across disciplines—including environmental sciences and compliance, architecture, civil and structural, MEP, geotechnical, transportation, planning, estimating, and adjacent technical fields.
+
+You receive the user's opening message as JSON (including any file or PDF parts).
+- Read every attached PDF or document carefully: identify proposal or SOQ/RFQ context, discipline, scope, entities, and whether the user wants review, redlines, or concrete edits to that PDF. Use only what the source text supports (no invention).
+- Prefer concrete subject matter (project name, agency, work type, discipline, or section being edited) over generic phrases.
+- Output a single line, at most 80 characters, suitable as a conversation title: grounded in the document when files are present, otherwise in the user's text.
+- Do not use quotes or colons in the output.`,
     prompt: JSON.stringify(message),
   });
 

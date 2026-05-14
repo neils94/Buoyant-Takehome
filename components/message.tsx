@@ -8,7 +8,6 @@ import { PencilEditIcon, SparklesIcon } from './icons';
 import { Markdown } from './markdown';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
-import { Weather } from './weather';
 import equal from 'fast-deep-equal';
 import { cn, sanitizeText } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -165,13 +164,65 @@ const PurePreviewMessage = ({
                 }
               }
 
-              if (type === 'tool-getWeather') {
+              if (type === 'tool-listKnowledgeBase') {
                 const { toolCallId, state } = part;
 
                 if (state === 'input-available') {
                   return (
-                    <div key={toolCallId} className="skeleton">
-                      <Weather />
+                    <div key={toolCallId} className="skeleton h-8 rounded-md" />
+                  );
+                }
+
+                if (state === 'output-available') {
+                  const { output } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div className="font-medium text-muted-foreground">
+                        Knowledge base
+                      </div>
+                      {'error' in output && output.error ? (
+                        <p className="text-red-600">{String(output.error)}</p>
+                      ) : (
+                        <ul className="mt-1 list-inside list-disc">
+                          {'files' in output &&
+                          Array.isArray(output.files) &&
+                          output.files.length > 0
+                            ? output.files.map(
+                                (f: { name: string; sizeBytes?: number }) => (
+                                  <li key={f.name}>
+                                    {f.name}
+                                    {typeof f.sizeBytes === 'number'
+                                      ? ` (${f.sizeBytes} bytes)`
+                                      : ''}
+                                  </li>
+                                ),
+                              )
+                            : 'No files found.'}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                }
+              }
+
+              if (type === 'tool-readKnowledgeBaseDocument') {
+                const { toolCallId, state } = part;
+
+                if (state === 'input-available') {
+                  const { input } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+                    >
+                      Reading KB:{' '}
+                      <span className="font-mono text-foreground">
+                        {input.fileName}
+                      </span>
+                      …
                     </div>
                   );
                 }
@@ -179,8 +230,39 @@ const PurePreviewMessage = ({
                 if (state === 'output-available') {
                   const { output } = part;
                   return (
-                    <div key={toolCallId}>
-                      <Weather weatherAtLocation={output} />
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div className="font-medium text-muted-foreground">
+                        Knowledge base document
+                      </div>
+                      {'error' in output && output.error ? (
+                        <p className="mt-1 text-red-600">
+                          {String(output.error)}
+                        </p>
+                      ) : (
+                        <>
+                          {'fileName' in output ? (
+                            <p className="mt-1 font-mono text-xs">
+                              {String(output.fileName)}
+                              {'truncated' in output && output.truncated
+                                ? ' (truncated)'
+                                : ''}
+                            </p>
+                          ) : null}
+                          {'text' in output &&
+                          typeof output.text === 'string' ? (
+                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background/80 p-2 text-xs">
+                              {output.text.slice(0, 4000)}
+                              {typeof output.text === 'string' &&
+                              output.text.length > 4000
+                                ? '\n…'
+                                : ''}
+                            </pre>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   );
                 }
@@ -303,6 +385,125 @@ const PurePreviewMessage = ({
                         result={output}
                         isReadonly={isReadonly}
                       />
+                    </div>
+                  );
+                }
+              }
+
+              if (type === 'tool-readUserProposalPdf') {
+                const { toolCallId, state } = part;
+
+                if (state === 'input-available') {
+                  const { input } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+                    >
+                      Reading proposal PDF…{' '}
+                      <span className="font-mono text-xs text-foreground break-all">
+                        {input.pdfUrl}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (state === 'output-available') {
+                  const { output } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div className="font-medium text-muted-foreground">
+                        Proposal PDF text
+                      </div>
+                      {'error' in output && output.error ? (
+                        <p className="mt-1 text-red-600">
+                          {String(output.error)}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 font-mono text-xs break-all">
+                            {String(
+                              (output as { pdfUrl?: string }).pdfUrl ?? '',
+                            )}
+                            {'truncated' in output && output.truncated
+                              ? ' (truncated)'
+                              : ''}
+                          </p>
+                          {'text' in output &&
+                          typeof output.text === 'string' ? (
+                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background/80 p-2 text-xs">
+                              {output.text.slice(0, 4000)}
+                              {output.text.length > 4000 ? '\n…' : ''}
+                            </pre>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+              }
+
+              if (type === 'tool-publishProposalPdfRevision') {
+                const { toolCallId, state } = part;
+
+                if (state === 'input-available') {
+                  const { input } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+                    >
+                      Publishing revised PDF…{' '}
+                      <span className="font-mono text-xs text-foreground">
+                        {input.outputFilename}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (state === 'output-available') {
+                  const { output } = part;
+                  return (
+                    <div
+                      key={toolCallId}
+                      className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div className="font-medium text-muted-foreground">
+                        Revised PDF
+                      </div>
+                      {'error' in output && output.error ? (
+                        <p className="mt-1 text-red-600">
+                          {String(output.error)}
+                        </p>
+                      ) : (
+                        <div className="mt-2 space-y-1 text-xs">
+                          {'newUrl' in output &&
+                          typeof output.newUrl === 'string' ? (
+                            <p className="break-all">
+                              <span className="text-muted-foreground">
+                                New URL:
+                              </span>{' '}
+                              <a
+                                className="text-primary underline"
+                                href={output.newUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {output.newUrl}
+                              </a>
+                            </p>
+                          ) : null}
+                          {'message' in output &&
+                          typeof output.message === 'string' ? (
+                            <p className="text-muted-foreground">
+                              {output.message}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   );
                 }

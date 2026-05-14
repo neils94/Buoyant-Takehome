@@ -1,13 +1,24 @@
 import {
   convertToModelMessages,
   createUIMessageStream,
+  createUIMessageStreamResponse,
   JsonToSseTransformStream,
+  type ModelMessage,
+  UI_MESSAGE_STREAM_HEADERS,
   smoothStream,
   stepCountIs,
   streamText,
 } from 'ai';
 import { auth, type UserType } from '@/app/(auth)/auth';
-import { type RequestHints, systemPrompt } from '@/lib/ai/prompts';
+import {
+  conversationalAssistantSystemPrompt,
+  groundingPrompt,
+  knowledgeBaseToolsPrompt,
+  artifactsPrompt,
+  pdfWorkspaceAgentPrompt,
+  regularPrompt,
+  systemPrompt,
+} from '@/lib/ai/prompts';
 import {
   createStreamId,
   deleteChatById,
@@ -22,12 +33,16 @@ import { generateTitleFromUserMessage } from '../../actions';
 import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
-import { getWeather } from '@/lib/ai/tools/get-weather';
-import { isProductionEnvironment } from '@/lib/constants';
+import {
+  listKnowledgeBase,
+  readKnowledgeBaseDocument,
+} from '@/lib/ai/tools/knowledge-base';
+import { createProposalPdfWorkspaceTools } from '@/lib/ai/tools/proposal-pdf-workspace';
+import { extractChatPdfUrls } from '@/lib/extract-chat-pdf-urls';
+import { isProductionEnvironment, isTestEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
-import { geolocation } from '@vercel/functions';
 import {
   createResumableStreamContext,
   type ResumableStreamContext,
@@ -39,6 +54,28 @@ import type { ChatModel } from '@/lib/ai/models';
 import type { VisibilityType } from '@/components/visibility-selector';
 
 export const maxDuration = 60;
+
+/**
+ * Anthropic rejects new generations when the prompt ends with an assistant
+ * message (unsupported prefill on this model). Step 1 leaves assistant/tool
+ * turns in `response.messages`; step 2 must end with a user turn.
+ */
+function withTrailingUserMessageForAnthropic(
+  messages: ModelMessage[],
+): ModelMessage[] {
+  const last = messages.at(-1);
+  if (last?.role === 'user') {
+    return messages;
+  }
+  return [
+    ...messages,
+    {
+      role: 'user',
+      content:
+        'Please write your user-facing follow-up for this turn now. Use the workspace pass and tool results already in the thread; the system prompt describes what to summarize.',
+    },
+  ];
+}
 
 let globalStreamContext: ResumableStreamContext | null = null;
 
@@ -91,6 +128,13 @@ export async function POST(request: Request) {
       return new ChatSDKError('unauthorized:chat').toResponse();
     }
 
+    if (!isTestEnvironment && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      return new ChatSDKError(
+        'bad_request:api',
+        'Missing ANTHROPIC_AUTH_TOKEN (proxy).',
+      ).toResponse();
+    }
+
     const userType: UserType = session.user.type;
 
     const messageCount = await getMessageCountByUserId({
@@ -122,16 +166,8 @@ export async function POST(request: Request) {
     }
 
     const messagesFromDb = await getMessagesByChatId({ id });
-    const uiMessages = [message, ...convertToUIMessages(messagesFromDb)];
-
-    const { longitude, latitude, city, country } = geolocation(request);
-
-    const requestHints: RequestHints = {
-      longitude,
-      latitude,
-      city,
-      country,
-    };
+    // DB order is oldest-first; the new user turn must be last for Anthropic (no trailing assistant).
+    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
 
     await saveMessages({
       messages: [
@@ -150,24 +186,113 @@ export async function POST(request: Request) {
     await createStreamId({ streamId, chatId: id });
 
     const stream = createUIMessageStream({
-      execute: ({ writer: dataStream }) => {
-        const result = streamText({
+      execute: async ({ writer: dataStream }) => {
+        const baseModelMessages = convertToModelMessages(uiMessages);
+        const allowedPdfUrlSet = new Set(extractChatPdfUrls(uiMessages));
+
+        if (selectedChatModel === 'chat-model-reasoning') {
+          const result = streamText({
+            model: myProvider.languageModel(selectedChatModel),
+            system: systemPrompt({ selectedChatModel }),
+            messages: baseModelMessages,
+            abortSignal: request.signal,
+            stopWhen: stepCountIs(5),
+            experimental_activeTools: [],
+            experimental_transform: smoothStream({ chunking: 'word' }),
+            tools: {
+              listKnowledgeBase,
+              readKnowledgeBaseDocument,
+              createDocument: createDocument({ session, dataStream }),
+              updateDocument: updateDocument({ session, dataStream }),
+              requestSuggestions: requestSuggestions({
+                session,
+                dataStream,
+              }),
+            },
+            experimental_telemetry: {
+              isEnabled: isProductionEnvironment,
+              functionId: 'stream-text',
+            },
+          });
+
+          result.consumeStream();
+
+          dataStream.merge(
+            result.toUIMessageStream({
+              sendReasoning: true,
+            }),
+          );
+          return;
+        }
+
+        const proposalPdfTools = createProposalPdfWorkspaceTools({
+          session,
+          dataStream,
+          allowedPdfUrlSet,
+        });
+
+        const workspaceSystem = `${groundingPrompt}\n\n${regularPrompt}\n\n${pdfWorkspaceAgentPrompt}\n\n${knowledgeBaseToolsPrompt}\n\n${artifactsPrompt}`;
+
+        const result1 = streamText({
           model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages: convertToModelMessages(uiMessages),
+          system: workspaceSystem,
+          messages: baseModelMessages,
+          abortSignal: request.signal,
           stopWhen: stepCountIs(5),
-          experimental_activeTools:
-            selectedChatModel === 'chat-model-reasoning'
-              ? []
-              : [
-                  'getWeather',
-                  'createDocument',
-                  'updateDocument',
-                  'requestSuggestions',
-                ],
+          experimental_activeTools: [
+            'readUserProposalPdf',
+            'publishProposalPdfRevision',
+            'listKnowledgeBase',
+            'readKnowledgeBaseDocument',
+            'createDocument',
+            'updateDocument',
+          ],
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: {
-            getWeather,
+            readUserProposalPdf: proposalPdfTools.readUserProposalPdf,
+            publishProposalPdfRevision:
+              proposalPdfTools.publishProposalPdfRevision,
+            listKnowledgeBase,
+            readKnowledgeBaseDocument,
+            createDocument: createDocument({ session, dataStream }),
+            updateDocument: updateDocument({ session, dataStream }),
+          },
+          experimental_telemetry: {
+            isEnabled: isProductionEnvironment,
+            functionId: 'stream-text-workspace',
+          },
+        });
+
+        dataStream.merge(
+          result1.toUIMessageStream({
+            sendReasoning: true,
+            sendFinish: false,
+          }),
+        );
+
+        const response1 = await result1.response;
+        const result2 = streamText({
+          model: myProvider.languageModel(selectedChatModel),
+          system: conversationalAssistantSystemPrompt({
+            selectedChatModel,
+          }),
+          messages: withTrailingUserMessageForAnthropic([
+            ...baseModelMessages,
+            ...response1.messages,
+          ]),
+          abortSignal: request.signal,
+          stopWhen: stepCountIs(5),
+          experimental_activeTools: [
+            'listKnowledgeBase',
+            'readKnowledgeBaseDocument',
+            'createDocument',
+            'updateDocument',
+            'requestSuggestions',
+          ],
+          experimental_transform: smoothStream({ chunking: 'word' }),
+          tools: {
+            listKnowledgeBase,
+            readKnowledgeBaseDocument,
             createDocument: createDocument({ session, dataStream }),
             updateDocument: updateDocument({ session, dataStream }),
             requestSuggestions: requestSuggestions({
@@ -177,17 +302,18 @@ export async function POST(request: Request) {
           },
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
+            functionId: 'stream-text-conversation',
           },
         });
 
-        result.consumeStream();
-
         dataStream.merge(
-          result.toUIMessageStream({
+          result2.toUIMessageStream({
             sendReasoning: true,
+            sendStart: false,
           }),
         );
+
+        await result2.response;
       },
       generateId: generateUUID,
       onFinish: async ({ messages }) => {
@@ -211,18 +337,28 @@ export async function POST(request: Request) {
     const streamContext = getStreamContext();
 
     if (streamContext) {
-      return new Response(
-        await streamContext.resumableStream(streamId, () =>
-          stream.pipeThrough(new JsonToSseTransformStream()),
-        ),
+      const resumed = await streamContext.resumableStream(streamId, () =>
+        stream.pipeThrough(new JsonToSseTransformStream()),
       );
-    } else {
-      return new Response(stream);
+      if (resumed == null) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(resumed.pipeThrough(new TextEncoderStream()), {
+        headers: UI_MESSAGE_STREAM_HEADERS,
+      });
     }
+
+    return createUIMessageStreamResponse({ stream });
   } catch (error) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
     }
+
+    console.error(error);
+    return Response.json(
+      { code: '', message: 'Something went wrong. Please try again later.' },
+      { status: 500 },
+    );
   }
 }
 

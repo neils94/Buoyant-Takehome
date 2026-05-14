@@ -1,8 +1,12 @@
 import { z } from 'zod';
-import type { getWeather } from './ai/tools/get-weather';
+import type {
+  listKnowledgeBase,
+  readKnowledgeBaseDocument,
+} from './ai/tools/knowledge-base';
 import type { createDocument } from './ai/tools/create-document';
 import type { updateDocument } from './ai/tools/update-document';
 import type { requestSuggestions } from './ai/tools/request-suggestions';
+import type { createProposalPdfWorkspaceTools } from './ai/tools/proposal-pdf-workspace';
 import type { InferUITool, UIMessage } from 'ai';
 
 import type { ArtifactKind } from '@/components/artifact';
@@ -16,18 +20,34 @@ export const messageMetadataSchema = z.object({
 
 export type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
-type weatherTool = InferUITool<typeof getWeather>;
+type listKnowledgeBaseTool = InferUITool<typeof listKnowledgeBase>;
+type readKnowledgeBaseDocumentTool = InferUITool<
+  typeof readKnowledgeBaseDocument
+>;
 type createDocumentTool = InferUITool<ReturnType<typeof createDocument>>;
 type updateDocumentTool = InferUITool<ReturnType<typeof updateDocument>>;
 type requestSuggestionsTool = InferUITool<
   ReturnType<typeof requestSuggestions>
 >;
 
+type proposalPdfWorkspaceTools = ReturnType<
+  typeof createProposalPdfWorkspaceTools
+>;
+type readUserProposalPdfTool = InferUITool<
+  proposalPdfWorkspaceTools['readUserProposalPdf']
+>;
+type publishProposalPdfRevisionTool = InferUITool<
+  proposalPdfWorkspaceTools['publishProposalPdfRevision']
+>;
+
 export type ChatTools = {
-  getWeather: weatherTool;
+  listKnowledgeBase: listKnowledgeBaseTool;
+  readKnowledgeBaseDocument: readKnowledgeBaseDocumentTool;
   createDocument: createDocumentTool;
   updateDocument: updateDocumentTool;
   requestSuggestions: requestSuggestionsTool;
+  readUserProposalPdf: readUserProposalPdfTool;
+  publishProposalPdfRevision: publishProposalPdfRevisionTool;
 };
 
 export type CustomUIDataTypes = {
@@ -42,6 +62,11 @@ export type CustomUIDataTypes = {
   kind: ArtifactKind;
   clear: null;
   finish: null;
+  proposalPdfRevision: {
+    previousUrl: string;
+    newUrl: string;
+    name: string;
+  };
 };
 
 export type ChatMessage = UIMessage<

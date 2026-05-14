@@ -42,6 +42,7 @@ function PureMultimodalInput({
   sendMessage,
   className,
   selectedVisibilityType,
+  composerRef,
 }: {
   chatId: string;
   input: string;
@@ -55,15 +56,10 @@ function PureMultimodalInput({
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   className?: string;
   selectedVisibilityType: VisibilityType;
+  composerRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { width } = useWindowSize();
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      adjustHeight();
-    }
-  }, []);
 
   const adjustHeight = () => {
     if (textareaRef.current) {
@@ -71,6 +67,12 @@ function PureMultimodalInput({
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
     }
   };
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      adjustHeight();
+    }
+  }, []);
 
   const resetHeight = () => {
     if (textareaRef.current) {
@@ -99,6 +101,10 @@ function PureMultimodalInput({
   useEffect(() => {
     setLocalStorageInput(input);
   }, [input, setLocalStorageInput]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [input]);
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(event.target.value);
@@ -249,6 +255,7 @@ function PureMultimodalInput({
         className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
         ref={fileInputRef}
         multiple
+        accept="application/pdf,.pdf"
         onChange={handleFileChange}
         tabIndex={-1}
       />
@@ -278,7 +285,12 @@ function PureMultimodalInput({
 
       <Textarea
         data-testid="multimodal-input"
-        ref={textareaRef}
+        ref={(el) => {
+          textareaRef.current = el;
+          if (composerRef) {
+            composerRef.current = el;
+          }
+        }}
         placeholder="Send a message..."
         value={input}
         onChange={handleInput}
@@ -296,9 +308,7 @@ function PureMultimodalInput({
           ) {
             event.preventDefault();
 
-            if (status !== 'ready') {
-              toast.error('Please wait for the model to finish its response!');
-            } else {
+            if (status === 'ready') {
               submitForm();
             }
           }
@@ -310,7 +320,7 @@ function PureMultimodalInput({
       </div>
 
       <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        {status === 'submitted' ? (
+        {status === 'submitted' || status === 'streaming' ? (
           <StopButton stop={stop} setMessages={setMessages} />
         ) : (
           <SendButton
@@ -371,6 +381,7 @@ function PureStopButton({
 }) {
   return (
     <Button
+      type="button"
       data-testid="stop-button"
       className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
       onClick={(event) => {
@@ -397,6 +408,7 @@ function PureSendButton({
 }) {
   return (
     <Button
+      type="button"
       data-testid="send-button"
       className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
       onClick={(event) => {
