@@ -38,7 +38,10 @@ import {
   readKnowledgeBaseDocument,
 } from '@/lib/ai/tools/knowledge-base';
 import { createProposalPdfWorkspaceTools } from '@/lib/ai/tools/proposal-pdf-workspace';
-import { extractChatPdfUrls } from '@/lib/extract-chat-pdf-urls';
+import {
+  extractChatPdfUrls,
+  mapUiMessagesPdfFilesToTextInstructions,
+} from '@/lib/extract-chat-pdf-urls';
 import { isProductionEnvironment, isTestEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
@@ -78,8 +81,30 @@ function withTrailingUserMessageForAnthropic(
 }
 
 let globalStreamContext: ResumableStreamContext | null = null;
+/** After Redis/resumable errors, skip Redis for this warm instance (serverless). */
+let skipResumableRedis = false;
+let loggedVercelLocalRedisSkip = false;
+
+function redisUrlLooksUnreachableOnVercel(): boolean {
+  if (process.env.VERCEL !== '1') {
+    return false;
+  }
+  const url = process.env.REDIS_URL ?? '';
+  const bad = Boolean(url) && /\b(localhost|127\.0\.0\.1)\b/i.test(url);
+  if (bad && !loggedVercelLocalRedisSkip) {
+    loggedVercelLocalRedisSkip = true;
+    console.log(
+      ' > Resumable streams disabled: REDIS_URL points to localhost on Vercel',
+    );
+  }
+  return bad;
+}
 
 export function getStreamContext() {
+  if (skipResumableRedis || redisUrlLooksUnreachableOnVercel()) {
+    return null;
+  }
+
   if (!globalStreamContext) {
     try {
       globalStreamContext = createResumableStreamContext({
@@ -187,8 +212,10 @@ export async function POST(request: Request) {
 
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
-        const baseModelMessages = convertToModelMessages(uiMessages);
         const allowedPdfUrlSet = new Set(extractChatPdfUrls(uiMessages));
+        const baseModelMessages = convertToModelMessages(
+          mapUiMessagesPdfFilesToTextInstructions(uiMessages),
+        );
 
         if (selectedChatModel === 'chat-model-reasoning') {
           const result = streamText({
@@ -337,15 +364,24 @@ export async function POST(request: Request) {
     const streamContext = getStreamContext();
 
     if (streamContext) {
-      const resumed = await streamContext.resumableStream(streamId, () =>
-        stream.pipeThrough(new JsonToSseTransformStream()),
-      );
-      if (resumed == null) {
-        return new Response(null, { status: 204 });
+      try {
+        const resumed = await streamContext.resumableStream(streamId, () =>
+          stream.pipeThrough(new JsonToSseTransformStream()),
+        );
+        if (resumed == null) {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(resumed.pipeThrough(new TextEncoderStream()), {
+          headers: UI_MESSAGE_STREAM_HEADERS,
+        });
+      } catch (error) {
+        skipResumableRedis = true;
+        globalStreamContext = null;
+        console.error(
+          'Resumable stream (Redis) failed; falling back to a direct SSE response. Check REDIS_URL on Vercel.',
+          error,
+        );
       }
-      return new Response(resumed.pipeThrough(new TextEncoderStream()), {
-        headers: UI_MESSAGE_STREAM_HEADERS,
-      });
     }
 
     return createUIMessageStreamResponse({ stream });

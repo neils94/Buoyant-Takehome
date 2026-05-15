@@ -51,3 +51,54 @@ export function extractChatPdfUrls(messages: ChatMessage[]): string[] {
 
   return ordered;
 }
+
+/**
+ * Replaces user/assistant `file` parts for PDFs with plain `text` instructions.
+ *
+ * Native Anthropic PDF `document` blocks require the `pdfs-2024-09-25` beta header.
+ * LiteLLM-style proxies (e.g. Buoyant hiring-proxy) often omit or mishandle that,
+ * which surfaces as upstream `api_error` / 500. The chat flow already exposes
+ * `readUserProposalPdf`, which downloads the same blob URL server-side.
+ */
+export function mapUiMessagesPdfFilesToTextInstructions(
+  messages: ChatMessage[],
+): ChatMessage[] {
+  return messages.map((message) => {
+    const nextParts: ChatMessage['parts'] = [];
+
+    for (const part of message.parts) {
+      if (part.type !== 'file') {
+        nextParts.push(part);
+        continue;
+      }
+
+      const file = part as {
+        type: 'file';
+        url: string;
+        mediaType: string;
+        filename?: string;
+        name?: string;
+      };
+      const name = file.filename ?? file.name ?? 'document.pdf';
+      const isPdfAttachment =
+        Boolean(file.url) &&
+        (isPdfMediaType(file.mediaType) || isPdfFilename(name));
+
+      if (!isPdfAttachment) {
+        nextParts.push(part);
+        continue;
+      }
+
+      nextParts.push({
+        type: 'text',
+        text: [
+          `A proposal PDF named "${name}" is attached in this thread.`,
+          'Read it with the readUserProposalPdf tool using exactly this pdfUrl (must match character-for-character):',
+          file.url,
+        ].join('\n'),
+      });
+    }
+
+    return { ...message, parts: nextParts };
+  });
+}
