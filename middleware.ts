@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { jwtHasUserId } from './lib/auth/jwt';
 import { guestRegex, isDevelopmentEnvironment } from './lib/constants';
 
 export async function middleware(request: NextRequest) {
@@ -23,7 +24,14 @@ export async function middleware(request: NextRequest) {
     secureCookie: !isDevelopmentEnvironment,
   });
 
-  if (!token) {
+  const hasUserId = jwtHasUserId(token);
+  const isApiRoute = pathname.startsWith('/api/');
+
+  if (!hasUserId) {
+    if (isApiRoute) {
+      return NextResponse.next();
+    }
+
     const redirectUrl = encodeURIComponent(request.url);
 
     return NextResponse.redirect(
@@ -33,7 +41,7 @@ export async function middleware(request: NextRequest) {
 
   const isGuest = guestRegex.test(token?.email ?? '');
 
-  if (token && !isGuest && ['/login', '/register'].includes(pathname)) {
+  if (!isGuest && ['/login', '/register'].includes(pathname)) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

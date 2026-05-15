@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       request,
       onBeforeGenerateToken: async (pathname) => {
         const session = await auth();
-        if (!session) {
+        if (!session?.user?.id) {
           throw new Error('Unauthorized');
         }
 

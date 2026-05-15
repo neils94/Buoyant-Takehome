@@ -27,3 +27,25 @@ export const entitlementsByUserType: Record<UserType, Entitlements> = {
    * TODO: For users with an account and a paid membership
    */
 };
+
+/** When JWT/session omits `type` (e.g. after token prune), infer from guest email prefix. */
+export function resolveUserType(
+  type: UserType | undefined,
+  email: string | null | undefined,
+): UserType {
+  if (type === 'guest' || type === 'regular') {
+    return type;
+  }
+  if (email?.startsWith('guest-')) {
+    return 'guest';
+  }
+  return 'regular';
+}
+
+export function entitlementsForSessionUser(opts: {
+  type: UserType | undefined;
+  email?: string | null;
+}): Entitlements {
+  const userType = resolveUserType(opts.type, opts.email);
+  return entitlementsByUserType[userType];
+}

@@ -30,7 +30,7 @@ export async function GET(
 
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new ChatSDKError('unauthorized:chat').toResponse();
   }
 

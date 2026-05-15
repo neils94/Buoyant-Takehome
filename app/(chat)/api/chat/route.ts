@@ -9,7 +9,7 @@ import {
   stepCountIs,
   streamText,
 } from 'ai';
-import { auth, type UserType } from '@/app/(auth)/auth';
+import { auth } from '@/app/(auth)/auth';
 import {
   conversationalAssistantSystemPrompt,
   groundingPrompt,
@@ -45,12 +45,13 @@ import {
 } from '@/lib/extract-chat-pdf-urls';
 import { isProductionEnvironment, isTestEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
-import { entitlementsByUserType } from '@/lib/ai/entitlements';
+import { entitlementsForSessionUser } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import {
   createResumableStreamContext,
   type ResumableStreamContext,
 } from 'resumable-stream';
+import { createClient } from 'redis';
 import { after } from 'next/server';
 import { ChatSDKError } from '@/lib/errors';
 import type { ChatMessage } from '@/lib/types';
@@ -85,6 +86,28 @@ let globalStreamContext: ResumableStreamContext | null = null;
 /** After Redis/resumable errors, skip Redis for this warm instance (serverless). */
 let skipResumableRedis = false;
 let loggedVercelLocalRedisSkip = false;
+let loggedResumableRedisSkipReason = false;
+
+/**
+ * Same resolution order as `resumable-stream` (REDIS_URL || KV_URL).
+ * `KV_URL` from Vercel/Upstash is often HTTPS (REST), which node-redis rejects
+ * with "Invalid protocol" — only redis: / rediss: are valid here.
+ */
+function resolveResumableRedisUrl(): string | null {
+  const raw = (process.env.REDIS_URL || process.env.KV_URL || '').trim();
+  if (!raw) {
+    return null;
+  }
+  try {
+    const { protocol } = new URL(raw);
+    if (protocol === 'redis:' || protocol === 'rediss:') {
+      return raw;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 function redisUrlLooksUnreachableOnVercel(): boolean {
   if (process.env.VERCEL !== '1') {
@@ -106,19 +129,41 @@ export function getStreamContext() {
     return null;
   }
 
-  if (!globalStreamContext) {
-    try {
-      globalStreamContext = createResumableStreamContext({
-        waitUntil: after,
-      });
-    } catch (error: any) {
-      if (error.message.includes('REDIS_URL')) {
+  const redisUrl = resolveResumableRedisUrl();
+  const rawEnvUrl = (process.env.REDIS_URL || process.env.KV_URL || '').trim();
+
+  if (!redisUrl) {
+    if (!loggedResumableRedisSkipReason) {
+      loggedResumableRedisSkipReason = true;
+      if (!rawEnvUrl) {
         console.log(
-          ' > Resumable streams are disabled due to missing REDIS_URL',
+          ' > Resumable streams are disabled due to missing REDIS_URL/KV_URL',
         );
       } else {
-        console.error(error);
+        console.log(
+          ' > Resumable streams disabled: REDIS_URL/KV_URL must be redis:// or rediss:// (non-Redis URLs are ignored)',
+        );
       }
+    }
+    return null;
+  }
+
+  if (!globalStreamContext) {
+    try {
+      const subscriber = createClient({ url: redisUrl });
+      const publisher = createClient({ url: redisUrl });
+      globalStreamContext = createResumableStreamContext({
+        waitUntil: after,
+        subscriber,
+        publisher,
+      });
+    } catch (error: unknown) {
+      skipResumableRedis = true;
+      globalStreamContext = null;
+      console.error(
+        'Resumable stream (Redis) init failed; streaming without resume.',
+        error,
+      );
     }
   }
 
@@ -169,14 +214,17 @@ export async function POST(request: Request) {
       ).toResponse();
     }
 
-    const userType: UserType = session.user.type;
+    const entitlements = entitlementsForSessionUser({
+      type: session.user.type,
+      email: dbUser.email,
+    });
 
     const messageCount = await getMessageCountByUserId({
       id: session.user.id,
       differenceInHours: 24,
     });
 
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
+    if (messageCount > entitlements.maxMessagesPerDay) {
       return new ChatSDKError('rate_limit:chat').toResponse();
     }
 
@@ -417,17 +465,32 @@ export async function DELETE(request: Request) {
 
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new ChatSDKError('unauthorized:chat').toResponse();
   }
 
-  const chat = await getChatById({ id });
+  try {
+    const chat = await getChatById({ id });
 
-  if (chat.userId !== session.user.id) {
-    return new ChatSDKError('forbidden:chat').toResponse();
+    if (!chat) {
+      return new ChatSDKError('not_found:chat').toResponse();
+    }
+
+    if (chat.userId !== session.user.id) {
+      return new ChatSDKError('forbidden:chat').toResponse();
+    }
+
+    const deletedChat = await deleteChatById({ id });
+
+    return Response.json(deletedChat, { status: 200 });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      return error.toResponse();
+    }
+    console.error('[DELETE /api/chat]', error);
+    return Response.json(
+      { code: '', message: 'Something went wrong. Please try again later.' },
+      { status: 500 },
+    );
   }
-
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
 }

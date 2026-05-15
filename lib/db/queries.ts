@@ -208,10 +208,13 @@ export async function getChatsByUserId({
       hasMore,
     };
   } catch (error) {
-    throw new ChatSDKError(
-      'bad_request:database',
-      'Failed to get chats by user id',
-    );
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    console.error('[getChatsByUserId]', error);
+    const detail =
+      error instanceof Error ? error.message : 'Failed to get chats by user id';
+    throw new ChatSDKError('bad_request:database', detail);
   }
 }
 

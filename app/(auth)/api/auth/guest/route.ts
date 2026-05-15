@@ -1,4 +1,5 @@
 import { signIn } from '@/app/(auth)/auth';
+import { jwtHasUserId } from '@/lib/auth/jwt';
 import { isDevelopmentEnvironment } from '@/lib/constants';
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
@@ -13,8 +14,8 @@ export async function GET(request: Request) {
     secureCookie: !isDevelopmentEnvironment,
   });
 
-  if (token) {
-    return NextResponse.redirect(new URL('/', request.url));
+  if (jwtHasUserId(token)) {
+    return NextResponse.redirect(new URL(redirectUrl, request.url));
   }
 
   return signIn('guest', { redirect: true, redirectTo: redirectUrl });

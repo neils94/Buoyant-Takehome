@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new ChatSDKError('unauthorized:vote').toResponse();
   }
 
@@ -51,7 +51,7 @@ export async function PATCH(request: Request) {
 
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new ChatSDKError('unauthorized:vote').toResponse();
   }
 
