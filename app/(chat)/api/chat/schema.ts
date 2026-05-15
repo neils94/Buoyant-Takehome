@@ -7,7 +7,13 @@ const textPartSchema = z.object({
 
 const filePartSchema = z.object({
   type: z.enum(['file']),
-  mediaType: z.enum(['image/jpeg', 'image/png', 'application/pdf']),
+  mediaType: z.enum([
+    'image/jpeg',
+    'image/png',
+    'application/pdf',
+    // Blob/client uploads sometimes preserve this for PDFs; still constrained to .pdf filenames in UI.
+    'application/octet-stream',
+  ]),
   name: z.string().min(1).max(100),
   url: z.string().url(),
 });

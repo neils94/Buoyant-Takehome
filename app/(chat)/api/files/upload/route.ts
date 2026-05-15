@@ -41,6 +41,7 @@ export async function POST(request: Request) {
         return {
           allowedContentTypes: [...PDF_MIME_TYPES],
           maximumSizeInBytes: MAX_PDF_BYTES,
+          addRandomSuffix: false,
           tokenPayload: JSON.stringify({ userId: session.user.id }),
         };
       },
