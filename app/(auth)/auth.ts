@@ -1,7 +1,7 @@
 import { compare } from 'bcrypt-ts';
 import NextAuth, { type DefaultSession } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-import { createGuestUser, getUser } from '@/lib/db/queries';
+import { createGuestUser, getUser, getUserById } from '@/lib/db/queries';
 import { authConfig } from './auth.config';
 import { DUMMY_PASSWORD } from '@/lib/constants';
 import type { DefaultJWT } from 'next-auth/jwt';
@@ -76,12 +76,21 @@ export const {
       if (user) {
         token.id = user.id as string;
         token.type = user.type;
+        return token;
+      }
+
+      if (typeof token.id === 'string' && token.id.length > 0) {
+        const row = await getUserById({ id: token.id });
+        if (!row) {
+          delete (token as { id?: string }).id;
+          delete (token as { type?: UserType }).type;
+        }
       }
 
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
+      if (session.user && token.id && token.type) {
         session.user.id = token.id;
         session.user.type = token.type;
       }

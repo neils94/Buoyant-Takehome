@@ -17,6 +17,20 @@ function pathnameLooksLikePdf(pathname: string): boolean {
   return pathname.toLowerCase().endsWith('.pdf');
 }
 
+/**
+ * URL Vercel Blob will POST `blob.upload-completed` to after a client upload.
+ * Must match this route; use `VERCEL_BLOB_CALLBACK_URL` when the request host
+ * is not publicly reachable (e.g. tunnels or custom domains).
+ */
+function resolveBlobClientUploadCallbackUrl(request: Request): string {
+  const base = process.env.VERCEL_BLOB_CALLBACK_URL?.trim().replace(/\/+$/, '');
+  const path = new URL(request.url).pathname;
+  if (base) {
+    return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  }
+  return new URL(request.url).href;
+}
+
 export async function POST(request: Request) {
   if (request.body === null) {
     return new Response('Request body is empty', { status: 400 });
@@ -42,11 +56,14 @@ export async function POST(request: Request) {
           allowedContentTypes: [...PDF_MIME_TYPES],
           maximumSizeInBytes: MAX_PDF_BYTES,
           addRandomSuffix: false,
+          allowOverwrite: true,
           tokenPayload: JSON.stringify({ userId: session.user.id }),
+          callbackUrl: resolveBlobClientUploadCallbackUrl(request),
         };
       },
       onUploadCompleted: async () => {
-        // Optional post-upload hooks (e.g. DB). Vercel Blob cannot reach localhost for this callback.
+        // Optional: persist blob metadata. Requires `callbackUrl` above or
+        // `VERCEL_BLOB_CALLBACK_URL`; Blob cannot reach plain localhost.
       },
     });
 

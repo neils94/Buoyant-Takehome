@@ -53,6 +53,19 @@ export async function getUser(email: string): Promise<Array<User>> {
   }
 }
 
+export async function getUserById({ id }: { id: string }): Promise<User | null> {
+  try {
+    const rows = await db.select().from(user).where(eq(user.id, id)).limit(1);
+    return rows.at(0) ?? null;
+  } catch (error) {
+    console.error('[getUserById]', error);
+    throw new ChatSDKError(
+      'bad_request:database',
+      error instanceof Error ? error.message : 'Failed to get user by id',
+    );
+  }
+}
+
 export async function createUser(email: string, password: string) {
   const hashedPassword = generateHashedPassword(password);
 
@@ -100,7 +113,10 @@ export async function saveChat({
       visibility,
     });
   } catch (error) {
-    throw new ChatSDKError('bad_request:database', 'Failed to save chat');
+    console.error('[saveChat]', error);
+    const detail =
+      error instanceof Error ? error.message : 'Failed to save chat';
+    throw new ChatSDKError('bad_request:database', detail);
   }
 }
 

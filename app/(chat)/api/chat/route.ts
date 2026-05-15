@@ -25,6 +25,7 @@ import {
   getChatById,
   getMessageCountByUserId,
   getMessagesByChatId,
+  getUserById,
   saveChat,
   saveMessages,
 } from '@/lib/db/queries';
@@ -149,8 +150,16 @@ export async function POST(request: Request) {
 
     const session = await auth();
 
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return new ChatSDKError('unauthorized:chat').toResponse();
+    }
+
+    const dbUser = await getUserById({ id: session.user.id });
+    if (!dbUser) {
+      return new ChatSDKError(
+        'unauthorized:chat',
+        'Your session does not match this database (user record missing). Sign out and sign in again.',
+      ).toResponse();
     }
 
     if (!isTestEnvironment && !process.env.ANTHROPIC_AUTH_TOKEN) {
