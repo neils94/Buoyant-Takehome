@@ -1,91 +1,59 @@
-import { put } from '@vercel/blob';
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
 import { auth } from '@/app/(auth)/auth';
 
 const MAX_PDF_BYTES = 32 * 1024 * 1024;
 
-const PDF_MIME_TYPES = new Set([
+const PDF_MIME_TYPES = [
   'application/pdf',
   'application/x-pdf',
   'application/acrobat',
-]);
+  // Some browsers send PDFs as octet-stream; pathname must still end in .pdf.
+  'application/octet-stream',
+] as const;
 
-function looksLikePdf(file: Blob, filename: string): boolean {
-  const type = file.type.toLowerCase();
-  if (PDF_MIME_TYPES.has(type)) {
-    return true;
-  }
-  // Some clients send empty type or octet-stream for uploads; fall back to extension.
-  if (type === '' || type === 'application/octet-stream') {
-    return filename.toLowerCase().endsWith('.pdf');
-  }
-  return false;
+function pathnameLooksLikePdf(pathname: string): boolean {
+  return pathname.toLowerCase().endsWith('.pdf');
 }
 
-const UploadSchema = z.object({
-  file: z
-    .instanceof(Blob)
-    .refine((file) => file.size <= MAX_PDF_BYTES, {
-      message: `File size should be less than ${MAX_PDF_BYTES / (1024 * 1024)}MB`,
-    }),
-  filename: z.string().min(1, { message: 'Filename is required' }),
-}).refine(({ file, filename }) => looksLikePdf(file, filename), {
-  message: 'File must be a PDF',
-  path: ['file'],
-});
-
 export async function POST(request: Request) {
-  const session = await auth();
-
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   if (request.body === null) {
     return new Response('Request body is empty', { status: 400 });
   }
 
   try {
-    const formData = await request.formData();
-    const file = formData.get('file');
+    const body = (await request.json()) as HandleUploadBody;
 
-    if (!(file instanceof Blob)) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (pathname) => {
+        const session = await auth();
+        if (!session) {
+          throw new Error('Unauthorized');
+        }
 
-    const filename =
-      file instanceof File && file.name
-        ? file.name
-        : (formData.get('filename') as string | null) ?? 'document.pdf';
+        if (!pathnameLooksLikePdf(pathname)) {
+          throw new Error('File must be a PDF');
+        }
 
-    const validated = UploadSchema.safeParse({ file, filename });
+        return {
+          allowedContentTypes: [...PDF_MIME_TYPES],
+          maximumSizeInBytes: MAX_PDF_BYTES,
+          tokenPayload: JSON.stringify({ userId: session.user.id }),
+        };
+      },
+      onUploadCompleted: async () => {
+        // Optional post-upload hooks (e.g. DB). Vercel Blob cannot reach localhost for this callback.
+      },
+    });
 
-    if (!validated.success) {
-      const errorMessage = validated.error.errors
-        .map((error) => error.message)
-        .join(', ');
-
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
-    }
-
-    const fileBuffer = await file.arrayBuffer();
-
-    try {
-      const data = await put(filename, fileBuffer, {
-        access: 'public',
-        contentType: 'application/pdf',
-      });
-
-      return NextResponse.json(data);
-    } catch (error) {
-      return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
-    }
+    return NextResponse.json(jsonResponse);
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to process request' },
-      { status: 500 },
-    );
+    const message =
+      error instanceof Error ? error.message : 'Failed to process request';
+    const status = message === 'Unauthorized' ? 401 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
